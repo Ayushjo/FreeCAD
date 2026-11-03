@@ -175,6 +175,88 @@ class PartMirrorGuiTestCases(unittest.TestCase):
         label = "a\nb\nc"
         self.assertEqual(f"{label} (Mirror #1)", self.mirrorBoxWithLabel(label))
 
+    def mirrorBoxInDocument(self, doc, name):
+        if not FreeCAD.GuiUp:
+            self.skipTest("This test requires a graphical user interface (GUI).")
+
+        box = doc.addObject("Part::Box", name)
+        doc.recompute()
+
+        FreeCADGui.Selection.clearSelection()
+        FreeCADGui.Selection.addSelection(doc.Name, box.Name)
+        FreeCADGui.runCommand("Part_Mirror")
+        self.assertTrue(FreeCADGui.Control.activeDialog(), "Part Mirror task dialog did not open.")
+
+        FreeCADGui.Control.activeTaskDialog().accept()
+        QtWidgets.QApplication.processEvents()
+
+        mirrors = [obj for obj in doc.Objects if obj.isDerivedFrom("Part::Mirroring")]
+        self.assertEqual(1, len(mirrors))
+        self.assertEqual(box, mirrors[0].Source)
+
+    def testMirrorInDocumentWithUnicodeName(self):
+        doc = FreeCAD.newDocument("m\u00e5le_kile")
+        self.addCleanup(FreeCAD.closeDocument, doc.Name)
+        self.mirrorBoxInDocument(doc, "Box")
+
+    def testMirrorObjectWithUnicodeName(self):
+        self.mirrorBoxInDocument(self.Doc, "Kile_\u00e5")
+
+
+class PartUnicodeObjectNameGuiTestCases(unittest.TestCase):
+    def setUp(self):
+        self.Doc = FreeCAD.newDocument("PartUnicodeObjectNameGuiTest")
+
+    def tearDown(self):
+        if FreeCADGui.Control.activeDialog():
+            FreeCADGui.Control.closeDialog()
+        FreeCADGui.Selection.clearSelection()
+        FreeCAD.closeDocument(self.Doc.Name)
+
+    def acceptToolOnObject(self, command, shape):
+        if not FreeCAD.GuiUp:
+            self.skipTest("This test requires a graphical user interface (GUI).")
+
+        obj = self.Doc.addObject("Part::Feature", "Kile_\u00e5")
+        obj.Shape = shape
+        self.Doc.recompute()
+
+        FreeCADGui.Selection.clearSelection()
+        FreeCADGui.Selection.addSelection(self.Doc.Name, obj.Name)
+        FreeCADGui.runCommand(command)
+        self.assertTrue(FreeCADGui.Control.activeDialog(), f"{command} task dialog did not open.")
+
+        FreeCADGui.Control.activeTaskDialog().accept()
+        QtWidgets.QApplication.processEvents()
+        return obj
+
+    def profile(self):
+        points = [
+            FreeCAD.Vector(2, 0, 0),
+            FreeCAD.Vector(4, 0, 0),
+            FreeCAD.Vector(4, 0, 2),
+            FreeCAD.Vector(2, 0, 0),
+        ]
+        return Part.Face(Part.makePolygon(points))
+
+    def testRevolveObjectWithUnicodeName(self):
+        obj = self.acceptToolOnObject("Part_Revolve", self.profile())
+        revolutions = [o for o in self.Doc.Objects if o.isDerivedFrom("Part::Revolution")]
+        self.assertEqual(1, len(revolutions))
+        self.assertEqual(obj, revolutions[0].Source)
+
+    def testScaleObjectWithUnicodeName(self):
+        obj = self.acceptToolOnObject("Part_Scale", Part.makeBox(1, 1, 1))
+        scales = [o for o in self.Doc.Objects if o.isDerivedFrom("Part::Scale")]
+        self.assertEqual(1, len(scales))
+        self.assertEqual(obj, scales[0].Base)
+
+    def testExtrudeObjectWithUnicodeName(self):
+        obj = self.acceptToolOnObject("Part_Extrude", self.profile())
+        extrusions = [o for o in self.Doc.Objects if o.isDerivedFrom("Part::Extrusion")]
+        self.assertEqual(1, len(extrusions))
+        self.assertEqual(obj, extrusions[0].Base)
+
 
 class SectionCutTestCases(unittest.TestCase):
     def setUp(self):
